@@ -74,9 +74,10 @@ where
 
     loop {
         // TODO: use complexity
-        let mut current_complexity = complexity(&expr);
+        let _current_complexity = complexity(&expr);
         let mut changed_in_this_pass = false;
 
+        #[allow(unused_assignments)]
         // try to simplify this expression using all rules
         if let Some(new_expr) = rules::all(&expr, step_collector) {
             expr = new_expr;
@@ -88,13 +89,71 @@ where
         // then begin recursing into the expression's children
         match expr {
             Expr::Primary(ref mut primary) => {
-                if let Primary::Call(_, args) = primary {
-                    let mut changed_in_this_pass = false;
+                if let Primary::Call(function, args) = primary {
+                    let mut _changed_in_this_pass = false;
                     for arg in args.iter_mut() {
                         let result = inner_simplify_with(arg, complexity, step_collector);
                         *arg = result.0;
-                        changed_in_this_pass |= result.1;
+                        _changed_in_this_pass |= result.1;
                         changed_at_least_once |= result.1;
+                    }
+                    match function.as_str() {
+                        "abs" if args.len() == 1 => match &mut args[0] {
+                            Expr::Primary(Primary::Integer(int)) => {
+                                int.abs_mut();
+                                expr = args.remove(0);
+                                _changed_in_this_pass = true;
+                                changed_at_least_once = true;
+                            }
+                            Expr::Primary(Primary::Float(float)) => {
+                                float.abs_mut();
+                                expr = args.remove(0);
+                                _changed_in_this_pass = true;
+                                changed_at_least_once = true;
+                            }
+                            _ => {}
+                        },
+                        "min" if args.len() == 2 => match &args[..] {
+                            [Expr::Primary(Primary::Integer(lhs)), Expr::Primary(Primary::Integer(rhs))] =>
+                            {
+                                expr = Expr::Primary(Primary::Integer(lhs.min(rhs).clone()));
+                                _changed_in_this_pass = true;
+                                changed_at_least_once = true;
+                            }
+                            [Expr::Primary(Primary::Float(lhs)), Expr::Primary(Primary::Float(rhs))] =>
+                            {
+                                expr = Expr::Primary(Primary::Float(lhs.clone().min(rhs)));
+                                _changed_in_this_pass = true;
+                                changed_at_least_once = true;
+                            }
+                            [lhs, rhs] if lhs == rhs => {
+                                expr = lhs.clone();
+                                _changed_in_this_pass = true;
+                                changed_at_least_once = true;
+                            }
+                            _ => {}
+                        },
+                        "max" if args.len() == 2 => match &args[..] {
+                            [Expr::Primary(Primary::Integer(lhs)), Expr::Primary(Primary::Integer(rhs))] =>
+                            {
+                                expr = Expr::Primary(Primary::Integer(lhs.max(rhs).clone()));
+                                _changed_in_this_pass = true;
+                                changed_at_least_once = true;
+                            }
+                            [Expr::Primary(Primary::Float(lhs)), Expr::Primary(Primary::Float(rhs))] =>
+                            {
+                                expr = Expr::Primary(Primary::Float(lhs.clone().max(rhs)));
+                                _changed_in_this_pass = true;
+                                changed_at_least_once = true;
+                            }
+                            [lhs, rhs] if lhs == rhs => {
+                                expr = lhs.clone();
+                                _changed_in_this_pass = true;
+                                changed_at_least_once = true;
+                            }
+                            _ => {}
+                        },
+                        _ => {}
                     }
                 }
 
