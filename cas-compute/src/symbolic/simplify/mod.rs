@@ -55,6 +55,7 @@ pub fn default_complexity(expr: &Expr) -> usize {
             },
             Expr::Add(terms) => 3 + terms.len(),
             Expr::Mul(factors) => 2 + factors.len(),
+            Expr::Mod(_, _) => 1,
             Expr::Exp(_, _) => 1,
         })
         .sum()
@@ -181,6 +182,14 @@ where
                 }
                 expr = output;
             },
+            Expr::Mod(ref mut lhs, ref mut rhs) => {
+                let result_l = inner_simplify_with(lhs, complexity, step_collector);
+                let result_r = inner_simplify_with(rhs, complexity, step_collector);
+
+                expr = result_l.0 % result_r.0;
+                changed_in_this_pass |= result_l.1 || result_r.1;
+                changed_at_least_once |= result_l.1 || result_r.1;
+            }
             Expr::Exp(ref mut lhs, ref mut rhs) => {
                 let result_l = inner_simplify_with(lhs, complexity, step_collector);
                 let result_r = inner_simplify_with(rhs, complexity, step_collector);

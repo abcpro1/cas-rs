@@ -58,6 +58,13 @@ impl<'a> Iterator for ExprIter<'a> {
                         self.stack.push(factor);
                     }
                 },
+                Expr::Mod(lhs, rhs) => {
+                    if self.is_last_visited(rhs) {
+                        return self.visit();
+                    }
+                    self.stack.push(rhs);
+                    self.stack.push(lhs);
+                }
                 Expr::Exp(lhs, rhs) => {
                     if self.is_last_visited(rhs) {
                         return self.visit();

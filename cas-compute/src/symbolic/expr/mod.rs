@@ -66,7 +66,7 @@ use std::{
     cmp::Ordering,
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
-    ops::{Add, AddAssign, Mul, MulAssign, Neg},
+    ops::{Add, AddAssign, Mul, MulAssign, Neg, Rem, RemAssign},
 };
 use super::simplify::fraction::make_fraction;
 
@@ -177,6 +177,20 @@ impl Mul<Primary> for Primary {
     }
 }
 
+impl Rem<Primary> for Primary {
+    type Output = Expr;
+
+    fn rem(self, rhs: Self) -> Self::Output {
+        match (self, rhs) {
+            (Primary::Integer(lhs), Primary::Integer(rhs)) => {
+                Expr::Primary(Primary::Integer(lhs % rhs))
+            }
+            (Primary::Float(lhs), Primary::Float(rhs)) => Expr::Primary(Primary::Float(lhs % rhs)),
+            (lhs, rhs) => Expr::Mod(Expr::Primary(lhs).into(), Expr::Primary(rhs).into()),
+        }
+    }
+}
+
 /// A mathematical expression with information about its terms and factors.
 ///
 /// This type should be distinguished from the [`cas_parser::parser::ast::Expr`] type, which is
@@ -195,6 +209,9 @@ pub enum Expr {
 
     /// Multiple factors multiplied together.
     Mul(Vec<Expr>),
+
+    /// Modulus operation.
+    Mod(Box<Expr>, Box<Expr>),
 
     /// An expression raised to a power.
     Exp(Box<Expr>, Box<Expr>),
@@ -232,6 +249,19 @@ impl std::fmt::Display for Expr {
                 }
                 Ok(())
             },
+            Self::Mod(base, modulo) => {
+                if matches!(base.cmp_precedence(self), Ordering::Less) {
+                    write!(f, "({})", base)?;
+                } else {
+                    write!(f, "{}", base)?;
+                }
+                if matches!(modulo.cmp_precedence(self), Ordering::Less) {
+                    write!(f, " % ({})", modulo)?;
+                } else {
+                    write!(f, " % {}", modulo)?;
+                }
+                Ok(())
+            }
             Self::Exp(base, exp) => {
                 if matches!(base.cmp_precedence(self), Ordering::Less) {
                     write!(f, "({})", base)?;
@@ -257,6 +287,7 @@ impl Expr {
             Self::Primary(_) => None,
             Self::Add(_) => Some(BinOpKind::Add.precedence()),
             Self::Mul(_) => Some(BinOpKind::Mul.precedence()),
+            Self::Mod(_, _) => Some(BinOpKind::Mod.precedence()),
             Self::Exp(_, _) => Some(BinOpKind::Exp.precedence()),
         }
     }
@@ -476,6 +507,10 @@ impl Hash for Expr {
 
                 out.hash(state);
             }
+            Expr::Mod(val_base, val_mod) => {
+                val_base.hash(state);
+                val_mod.hash(state);
+            }
             Expr::Exp(val_base, val_exp) => {
                 val_base.hash(state);
                 val_exp.hash(state);
@@ -556,7 +591,10 @@ impl From<AstExpr> for Expr {
                             Self::from(*bin.rhs),
                         )
                     },
-                    BinOpKind::Mod => todo!(),
+                    BinOpKind::Mod => Self::Mod(
+                        Box::new(Self::from(*bin.lhs)),
+                        Box::new(Self::from(*bin.rhs)),
+                    ),
                     BinOpKind::Add => {
                         // iteratively flatten binary expressions into terms
                         // because the AST obviously exists, `terms` will never end up as a
@@ -674,6 +712,16 @@ impl From<Expr> for AstExpr {
                 }
                 expr
             },
+            Expr::Mod(lhs, rhs) => AstExpr::Binary(Binary {
+                lhs: Box::new(Self::from(*lhs)),
+                op: BinOp {
+                    kind: BinOpKind::Mod,
+                    implicit: false,
+                    span: 0..0,
+                },
+                rhs: Box::new(Self::from(*rhs)),
+                span: 0..0,
+            }),
             Expr::Exp(lhs, rhs) => AstExpr::Binary(Binary {
                 lhs: Box::new(Self::from(*lhs)),
                 op: BinOp {
@@ -802,6 +850,33 @@ impl MulAssign for Expr {
                     std::ptr::write(lhs, Self::Mul(vec![owned, rhs]));
                 }
             },
+        }
+    }
+}
+
+impl Rem for Expr {
+    type Output = Self;
+
+    fn rem(self, rhs: Self) -> Self {
+        match (self, rhs) {
+            (Self::Primary(lhs), Self::Primary(rhs)) => lhs % rhs,
+            (lhs, rhs) => Self::Mod(lhs.into(), rhs.into()),
+        }
+    }
+}
+
+impl RemAssign for Expr {
+    fn rem_assign(&mut self, rhs: Self) {
+        match (self, rhs) {
+            (Self::Primary(Primary::Integer(lhs)), Self::Primary(Primary::Integer(rhs))) => {
+                *lhs %= rhs;
+            }
+            (Self::Primary(Primary::Float(lhs)), Self::Primary(Primary::Float(rhs))) => {
+                *lhs %= rhs;
+            }
+            (lhs, rhs) => {
+                *lhs = Self::Mod(lhs.clone().into(), rhs.clone().into());
+            }
         }
     }
 }
